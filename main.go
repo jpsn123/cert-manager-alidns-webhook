@@ -125,7 +125,7 @@ func (c *aliDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	}
 	c.aliDNSClient = client
 
-	_, zoneName, err := c.getHostedZone(ch.ResolvedZone)
+	_, zoneName, err := c.getHostedZone(ch.ResolvedFQDN)
 	if err != nil {
 		return fmt.Errorf("alicloud: error getting hosted zones: %v", err)
 	}
@@ -146,12 +146,12 @@ func (c *aliDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 // This is in order to facilitate multiple DNS validations for the same domain
 // concurrently.
 func (c *aliDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
-	records, err := c.findTxtRecords(ch.ResolvedZone, ch.ResolvedFQDN)
+	records, err := c.findTxtRecords(ch.ResolvedFQDN)
 	if err != nil {
 		return fmt.Errorf("alicloud: error finding txt records: %v", err)
 	}
 
-	_, _, err = c.getHostedZone(ch.ResolvedZone)
+	_, _, err = c.getHostedZone(ch.ResolvedFQDN)
 	if err != nil {
 		return fmt.Errorf("alicloud: %v", err)
 	}
@@ -204,7 +204,7 @@ func loadConfig(cfgJSON *extapi.JSON) (aliDNSProviderConfig, error) {
 	return cfg, nil
 }
 
-func (c *aliDNSProviderSolver) getHostedZone(resolvedZone string) (string, string, error) {
+func (c *aliDNSProviderSolver) getHostedZone(resolvedFQDN string) (string, string, error) {
 	request := alidns.CreateDescribeDomainsRequest()
 
 	var domains []alidns.Domain
@@ -229,13 +229,13 @@ func (c *aliDNSProviderSolver) getHostedZone(resolvedZone string) (string, strin
 
 	var hostedZone alidns.Domain
 	for _, zone := range domains {
-		if zone.DomainName == util.UnFqdn(resolvedZone) {
+		if strings.Contains(resolvedFQDN, strings.Trim(zone.DomainName, " ")) {
 			hostedZone = zone
 		}
 	}
 
 	if hostedZone.DomainId == "" {
-		return "", "", fmt.Errorf("zone %s not found in AliDNS", resolvedZone)
+		return "", "", fmt.Errorf("zone %s not found in AliDNS", resolvedFQDN)
 	}
 	return fmt.Sprintf("%v", hostedZone.DomainId), hostedZone.DomainName, nil
 }
@@ -249,8 +249,8 @@ func (c *aliDNSProviderSolver) newTxtRecord(zone, fqdn, value string) *alidns.Ad
 	return request
 }
 
-func (c *aliDNSProviderSolver) findTxtRecords(domain string, fqdn string) ([]alidns.Record, error) {
-	_, zoneName, err := c.getHostedZone(domain)
+func (c *aliDNSProviderSolver) findTxtRecords(fqdn string) ([]alidns.Record, error) {
+	_, zoneName, err := c.getHostedZone(fqdn)
 	if err != nil {
 		return nil, err
 	}
